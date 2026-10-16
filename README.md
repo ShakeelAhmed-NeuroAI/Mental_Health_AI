@@ -1,22 +1,41 @@
-# 🧠 Mental Health AI: 32-Channel Brain-Machine Interface & GCN Pipeline
+# Mental_Health_AI: Real-Time Edge Neuro-AI Engine
 
-An advanced computational neuroscience software platform utilizing high-throughput Graph Neural Networks (GNN) to decode spatial electrophysiology matrices into multi-class diagnostic psychiatric biomarkers. 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX-Opset_17-green.svg)](https://onnxruntime.ai/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🔬 Scientific & Clinical Objective
-Traditional psychiatric models depend heavily on subjective diagnostic assessments. This platform treats neurological variations—specifically Major Depressive Disorder, Severe Anxiety, Schizophrenia, and Bipolar Disorder—as interconnected neuro-circuit dysfunctions rather than isolated chemical imbalances. The core architecture processes real-time signal streams to track structural deviations completely offline.
+An end-to-end, ultra-low-latency Graph Attention Network (GAT) inference engine designed for real-time electroencephalography (EEG) functional connectivity decoding and embedded microcontroller deployment.
 
-## 🚀 Key Technological Advancements
-* **Graph Convolutional Deep Learning Core:** Maps time-series feature profiles over 68 global brain coordinates utilizing custom mathematical message-passing layers (H = AxW).
-* **Biophysical Ratio Computations:** Formulates natural logarithmic Frontal Alpha Asymmetry (FAA) equations \(\ln(\text{Right Alpha}) - \ln(\text{Left Alpha})\) to cleanly resolve inter-hemispheric dominance loops linked to depressive pathways.
-* **Hardware-Agnostic Stream Bridge:** Integrated with the open-source **BrainFlow** acquisition framework, establishing a dynamic matrix projection layer that maps low-density consumer scalp sensors up to the full dimensions of a structural cortical grid map layout.
-* **Cryptographic Security Management:** Outfitted with SHA-256 access control filters to secure proprietary algorithmic weights during deployment configurations.
+---
 
-## 📊 Experimental Architecture & Performance
-* **Cohort Volume Processing Capacity:** Verified multi-subject tracking arrays processing 50 unique patient records simultaneously.
-* **Calibration Optimization Parameters:** Achieved stable gradient step convergence tracking cross-entropy backpropagation loops down to a loss baseline of `0.5278`.
-* **Sensor Resolution Baseline:** Formatted to ingest continuous 32-channel international 10-20 system electrode array data streams at a 250.0 Hz sampling rate frequency.
+## Technical Architecture & Deployment Metrics
 
-## 🏢 Commercialization & Strategic Partnership Roadmap
-This framework functions as a software-based neuro-signal decoder module designed to address data processing bottlenecks within next-generation brain-machine interfaces (BMIs). The technology is structured for two primary distribution tracks:
-1. **SaaS Cloud Interface API:** A secure hosting model where research university groups and private diagnostic clinics license data ingestion passes via automated subscription tiers.
-2. **Proprietary IP Corporate Acquisition:** Presenting the operational offline decoding module to advanced medical device manufacturers seeking immediate software acceleration tools for dense biophysical matrix classification.
+- **Dynamic Graph Construction:** Converts 32-channel EEG streams into 5-band spectral Welch PSD node features ($\delta, \theta, \alpha, \beta, \gamma$) paired with Pearson functional connectivity matrices ($32 \times 32$).
+- **ONNX Acceleration:** Serialized PyTorch Geometric models to ONNX Opset 17, resolving dynamic `aten::scatter_reduce` graph operators to achieve **0.834 ms/window inference** (**2.03x speedup** over native PyTorch).
+- **Real-Time Streaming:** Implements a 50% overlapping ring buffer streaming pipeline delivering live state predictions with end-to-end processing latencies between **12 ms and 20 ms**.
+- **Bare-Metal Deployment:** Extracts trained parameters into static C float arrays (`gat_weights.h`) for zero-dependency execution on low-power microcontrollers (e.g., RP2040, ARM Cortex-M).
+- **Monitoring Dashboard:** Features an interactive real-time interface built with PyQt6 and PyQtGraph (`dashboard.py`).
+
+---
+
+## Performance Benchmarks
+
+| Metric | PyTorch Eager (FP32) | ONNX Runtime (Opset 17 FP32) |
+| :--- | :--- | :--- |
+| **Inference Latency** | 1.694 ms / window | **0.834 ms / window** |
+| **Speedup Ratio** | 1.00x | **2.03x** |
+| **Total Stream Latency** | — | **12.31 – 20.98 ms** |
+| **Model Footprint** | 42 KB | **40.45 KB** |
+
+---
+
+## Repository Structure
+
+```text
+Mental_Health_AI/
+├── gat_weights.h         # Static C float header for bare-metal MCU targets
+├── benchmark_int8.py     # ONNX vs PyTorch performance & latency benchmark
+├── dashboard.py          # Real-time PyQt6 streaming interface
+├── export_c_header.py    # Parameter extraction script to C arrays
+├── train_model.py        # Offline GAT PyG training script
+└── README.md
