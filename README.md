@@ -39,3 +39,13 @@ Mental_Health_AI/
 ├── export_c_header.py    # Parameter extraction script to C arrays
 ├── train_model.py        # Offline GAT PyG training script
 └── README.md
+---
+
+## Citation & Author
+
+**Shakeel Ahmed**  
+*Electrical & Neuro-AI Engineer*  
+- **PEC Registration:** Elect/75690  
+- **ORCID:** [0009-0006-2566-1616](https://orcid.org/0009-0006-2566-1616)  
+- **Preprint DOI:** [10.5281/zenodo.22939463](https://doi.org/10.5281/zenodo.22939463)  
+- **Journal Under Review:** *Biomedical Signal Processing and Control* (Ref: BSPC-D-26-19431)
