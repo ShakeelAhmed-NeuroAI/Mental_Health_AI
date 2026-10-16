@@ -1,5 +1,5 @@
 # Mental_Health_AI: Real-Time Edge Neuro-AI Engine
-
+![Real-Time Dashboard Demo](dashboard_demo.png)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX-Opset_17-green.svg)](https://onnxruntime.ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
