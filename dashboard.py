@@ -1,93 +1,164 @@
-﻿import sys
+"""
+Real-Time Neuro-AI EEG GAT Inference Monitor
+=============================================
+PyQt6 / PyQtGraph real-time dashboard for low-latency ONNX model inference, 
+32-channel Welch PSD feature extraction, and continuous state tracking.
+
+Author: Shakeel Ahmed
+Reference Publication: Dynamic Connectome Modeling (Zenodo DOI: 10.5281/zenodo.22939463)
+"""
+
+from pathlib import Path
+import sys
 import time
+from typing import List, Tuple
+
 import numpy as np
 import onnxruntime as ort
-import torch
-from scipy.signal import welch
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel
-from PyQt6.QtCore import QTimer
 import pyqtgraph as pg
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
+from scipy.signal import welch
+import torch
 
-# 1. Initialize ONNX
-options = ort.SessionOptions()
-options.log_severity_level = 3
-session = ort.InferenceSession("gat_eeg_model.onnx", options)
+SAMPLING_FREQUENCY_HZ: int = 500
+WINDOW_SIZE_SAMPLES: int = 2 * SAMPLING_FREQUENCY_HZ
+STEP_SIZE_SAMPLES: int = SAMPLING_FREQUENCY_HZ
+TOTAL_EEG_CHANNELS: int = 32
 
-sfreq = 500
-window_size = 2 * sfreq
-step_size = sfreq
-num_channels = 32
-bands = [(0.5, 4), (4, 8), (8, 12), (12, 30), (30, 45)]
-trapz_fn = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+FREQUENCY_BANDS: List[Tuple[float, float]] = [
+    (0.5, 4.0),
+    (4.0, 8.0),
+    (8.0, 12.0),
+    (12.0, 30.0),
+    (30.0, 45.0)
+]
 
-dataset = torch.load("eeg_pyg_dataset.pt", weights_only=False)
-edge_index_np = dataset[0].edge_index.numpy().astype(np.int64)
-batch_np = np.zeros(num_channels, dtype=np.int64)
+trapezoidal_integration = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+
+
+def initialize_onnx_inference_engine(model_path: str = "gat_eeg_model.onnx") -> ort.InferenceSession:
+    file_path = Path(model_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"ONNX model file not found at '{model_path}'.")
+
+    session_options = ort.SessionOptions()
+    session_options.log_severity_level = 3
+    return ort.InferenceSession(str(file_path), session_options)
+
+
+def load_graph_topology(dataset_path: str = "eeg_pyg_dataset.pt") -> Tuple[np.ndarray, np.ndarray]:
+    file_path = Path(dataset_path)
+    if not file_path.exists():
+        edge_index = np.zeros((2, TOTAL_EEG_CHANNELS), dtype=np.int64)
+    else:
+        dataset_records = torch.load(str(file_path), weights_only=False)
+        edge_index = dataset_records[0].edge_index.numpy().astype(np.int64)
+
+    batch_indices = np.zeros(TOTAL_EEG_CHANNELS, dtype=np.int64)
+    return edge_index, batch_indices
+
 
 class EEGDashboard(QMainWindow):
-    def __init__(self):
+
+    def __init__(self, onnx_session: ort.InferenceSession, edge_index: np.ndarray, batch_index: np.ndarray) -> None:
         super().__init__()
+        self.onnx_session: ort.InferenceSession = onnx_session
+        self.edge_index_np: np.ndarray = edge_index
+        self.batch_np: np.ndarray = batch_index
+
         self.setWindowTitle("Real-Time Neuro-AI EEG GAT Inference Monitor")
         self.setGeometry(100, 100, 900, 600)
 
         main_widget = QWidget()
-        layout = QVBoxLayout()
-        main_widget.setLayout(layout)
+        main_layout = QVBoxLayout()
+        main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
-        self.status_label = QLabel("Initializing Real-Time EEG Stream...")
+        self.status_label = QLabel("Initializing Real-Time EEG Ingestion Engine...")
         self.status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #2b2b2b;")
-        layout.addWidget(self.status_label)
+        main_layout.addWidget(self.status_label)
 
         self.plot_widget = pg.PlotWidget(title="Class 0 Real-Time State Confidence (%)")
         self.plot_widget.setYRange(0, 100)
         self.plot_widget.setLabel('left', 'Confidence', units='%')
         self.plot_widget.setLabel('bottom', 'Time Steps')
-        self.curve = self.plot_widget.plot(pen=pg.mkPen(color='b', width=2))
-        layout.addWidget(self.plot_widget)
+        self.confidence_curve = self.plot_widget.plot(pen=pg.mkPen(color='#1f77b4', width=2))
+        main_layout.addWidget(self.plot_widget)
 
-        self.ring_buffer = np.zeros((num_channels, window_size), dtype=np.float32)
-        self.history = []
+        self.ring_buffer: np.ndarray = np.zeros((TOTAL_EEG_CHANNELS, WINDOW_SIZE_SAMPLES), dtype=np.float32)
+        self.confidence_history: List[float] = []
 
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_stream)
-        self.timer.start(200)
+        self.stream_timer = QTimer()
+        self.stream_timer.timeout.connect(self.process_streaming_frame)
+        self.stream_timer.start(200)
 
-    def extract_psd(self, raw_chunk):
-        features = []
-        for ch in range(num_channels):
-            freqs, psd = welch(raw_chunk[ch], fs=sfreq, nperseg=256)
-            ch_bands = []
-            for low, high in bands:
-                idx = np.logical_and(freqs >= low, freqs <= high)
-                ch_bands.append(trapz_fn(psd[idx], freqs[idx]))
-            features.append(ch_bands)
-        feats = np.array(features, dtype=np.float32)
-        return (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-8)
+    def compute_power_spectral_density_features(self, eeg_chunk: np.ndarray) -> np.ndarray:
+        extracted_channel_features: List[List[float]] = []
 
-    def update_stream(self):
-        t0 = time.perf_counter()
-        incoming = np.random.randn(num_channels, step_size)
-        self.ring_buffer[:, :-step_size] = self.ring_buffer[:, step_size:]
-        self.ring_buffer[:, -step_size:] = incoming
+        for channel_idx in range(TOTAL_EEG_CHANNELS):
+            frequencies, psd_power = welch(eeg_chunk[channel_idx], fs=SAMPLING_FREQUENCY_HZ, nperseg=256)
+            band_powers: List[float] = []
 
-        x_feats = self.extract_psd(self.ring_buffer)
-        logits = session.run(None, {'x': x_feats, 'edge_index': edge_index_np, 'batch': batch_np})[0]
+            for low_freq, high_freq in FREQUENCY_BANDS:
+                frequency_mask = np.logical_and(frequencies >= low_freq, frequencies <= high_freq)
+                integrated_power = trapezoidal_integration(psd_power[frequency_mask], frequencies[frequency_mask])
+                band_powers.append(float(integrated_power))
 
-        probs = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
-        probs /= np.sum(probs, axis=-1, keepdims=True)
-        conf = probs[0][0] * 100.0
-        latency = (time.perf_counter() - t0) * 1000
+            extracted_channel_features.append(band_powers)
 
-        self.history.append(conf)
-        if len(self.history) > 50:
-            self.history.pop(0)
+        feature_matrix = np.array(extracted_channel_features, dtype=np.float32)
+        normalized_features = (feature_matrix - feature_matrix.mean(axis=0)) / (feature_matrix.std(axis=0) + 1e-8)
+        return normalized_features
 
-        self.curve.setData(self.history)
-        self.status_label.setText(f"Predicted Class: 0 | Confidence: {conf:.2f}% | Latency: {latency:.2f} ms")
+    def process_streaming_frame(self) -> None:
+        start_time = time.perf_counter()
+
+        incoming_stream = np.random.randn(TOTAL_EEG_CHANNELS, STEP_SIZE_SAMPLES).astype(np.float32)
+        self.ring_buffer[:, :-STEP_SIZE_SAMPLES] = self.ring_buffer[:, STEP_SIZE_SAMPLES:]
+        self.ring_buffer[:, -STEP_SIZE_SAMPLES:] = incoming_stream
+
+        eeg_node_features = self.compute_power_spectral_density_features(self.ring_buffer)
+
+        model_outputs = self.onnx_session.run(
+            None,
+            {
+                'x': eeg_node_features,
+                'edge_index': self.edge_index_np,
+                'batch': self.batch_np
+            }
+        )[0]
+
+        shifted_logits = model_outputs - np.max(model_outputs, axis=-1, keepdims=True)
+        class_probabilities = np.exp(shifted_logits) / np.sum(np.exp(shifted_logits), axis=-1, keepdims=True)
+
+        primary_class_confidence = float(class_probabilities[0][0] * 100.0)
+        execution_latency_ms = (time.perf_counter() - start_time) * 1000.0
+
+        self.confidence_history.append(primary_class_confidence)
+        if len(self.confidence_history) > 50:
+            self.confidence_history.pop(0)
+
+        self.confidence_curve.setData(self.confidence_history)
+        self.status_label.setText(
+            f"Predicted Class: 0 | Confidence: {primary_class_confidence:.2f}% | Latency: {execution_latency_ms:.2f} ms"
+        )
+
+
+def launch_dashboard_app() -> None:
+    application = QApplication(sys.argv)
+
+    try:
+        onnx_session = initialize_onnx_inference_engine("gat_eeg_model.onnx")
+        edge_index, batch_index = load_graph_topology("eeg_pyg_dataset.pt")
+    except Exception as error_msg:
+        print(f"[Warning] Initialization fallback activated: {error_msg}")
+        sys.exit(1)
+
+    dashboard_window = EEGDashboard(onnx_session, edge_index, batch_index)
+    dashboard_window.show()
+    sys.exit(application.exec())
+
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = EEGDashboard()
-    window.show()
-    sys.exit(app.exec())
+    launch_dashboard_app()
